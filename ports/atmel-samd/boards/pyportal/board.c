@@ -25,7 +25,6 @@
  */
 
 #include "boards/board.h"
-#include "supervisor/shared/board_busses.h"
 #include "mpconfigboard.h"
 #include "hal/include/hal_gpio.h"
 
@@ -48,7 +47,7 @@ uint8_t display_init_sequence[] = {
     0xc1, 1, 0x10,             // Power control SAP[2:0];BT[3:0]
     0xc5, 2, 0x3e, 0x28,       // VCM control
     0xc7, 1, 0x86,             // VCM control2
-    0x36, 1, 0x08,             // Memory Access Control
+    0x36, 1, 0xa8,             // Memory Access Control
     0x37, 1, 0x00,             // Vertical scroll zero
     0x3a, 1, 0x55,             // COLMOD: Pixel Format Set
     0xb1, 2, 0x00, 0x18,       // Frame Rate Control (In Normal Mode/Full Colors)
@@ -82,7 +81,7 @@ void board_init(void) {
         240, // Height
         0, // column start
         0, // row start
-        90, // rotation
+        0, // rotation
         16, // Color depth
         MIPI_COMMAND_SET_COLUMN_ADDRESS, // Set column command
         MIPI_COMMAND_SET_PAGE_ADDRESS, // Set row command
@@ -90,7 +89,11 @@ void board_init(void) {
         0x37, // Set vertical scroll command
         display_init_sequence,
         sizeof(display_init_sequence),
-        &pin_PB31);
+        &pin_PB31,
+        1.0f, // brightness (ignored)
+        true, // auto_brightness
+        false, // single_byte_bounds
+        false); // data_as_commands
 }
 
 bool board_requests_safe_mode(void) {

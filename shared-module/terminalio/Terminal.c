@@ -26,15 +26,14 @@
 
 #include "shared-module/terminalio/Terminal.h"
 
-#include "shared-module/displayio/__init__.h"
+#include "shared-module/fontio/BuiltinFont.h"
 #include "shared-bindings/displayio/TileGrid.h"
 
-void common_hal_terminalio_terminal_construct(terminalio_terminal_obj_t *self, displayio_tilegrid_t* tilegrid, const uint8_t* unicode_characters, size_t unicode_characters_len) {
+void common_hal_terminalio_terminal_construct(terminalio_terminal_obj_t *self, displayio_tilegrid_t* tilegrid, const fontio_builtinfont_t* font) {
     self->cursor_x = 0;
     self->cursor_y = 0;
+    self->font = font;
     self->tilegrid = tilegrid;
-    self->unicode_characters = unicode_characters;
-    self->unicode_characters_len = unicode_characters_len;
     self->first_row = 0;
 }
 
@@ -47,10 +46,10 @@ size_t common_hal_terminalio_terminal_write(terminalio_terminal_obj_t *self, con
         // Always handle ASCII.
         if (c < 128) {
             if (c >= 0x20 && c <= 0x7e) {
-                common_hal_displayio_textgrid_set_tile(self->tilegrid, self->cursor_x, self->cursor_y, c - 0x20);
+                uint8_t tile_index = fontio_builtinfont_get_glyph_index(self->font, c);
+                common_hal_displayio_tilegrid_set_tile(self->tilegrid, self->cursor_x, self->cursor_y, tile_index);
                 self->cursor_x++;
-            }
-            if (c == '\r') {
+            } else if (c == '\r') {
                 self->cursor_x = 0;
             } else if (c == '\n') {
                 self->cursor_y++;
@@ -64,7 +63,7 @@ size_t common_hal_terminalio_terminal_write(terminalio_terminal_obj_t *self, con
                     if (i[1] == 'K') {
                         // Clear the rest of the line.
                         for (uint16_t j = self->cursor_x; j < self->tilegrid->width_in_tiles; j++) {
-                            common_hal_displayio_textgrid_set_tile(self->tilegrid, j, self->cursor_y, 0);
+                            common_hal_displayio_tilegrid_set_tile(self->tilegrid, j, self->cursor_y, 0);
                         }
                         i += 2;
                     } else {
@@ -76,6 +75,7 @@ size_t common_hal_terminalio_terminal_write(terminalio_terminal_obj_t *self, con
                                 n = n * 10 + (i[j] - '0');
                             } else {
                                 c = i[j];
+                                break;
                             }
                         }
                         if (c == 'D') {
@@ -84,23 +84,18 @@ size_t common_hal_terminalio_terminal_write(terminalio_terminal_obj_t *self, con
                             } else {
                                 self->cursor_x -= n;
                             }
-                            i += j;
                         }
+                        i += j + 1;
+                        continue;
                     }
                 }
             }
         } else {
-            // Do a linear search of the mapping for unicode.
-            const byte* j = self->unicode_characters;
-            uint8_t k = 0;
-            while (j < self->unicode_characters + self->unicode_characters_len) {
-                unichar potential_c = utf8_get_char(j);
-                j = utf8_next_char(j);
-                if (c == potential_c) {
-                    common_hal_displayio_textgrid_set_tile(self->tilegrid, self->cursor_x, self->cursor_y, 0x7f - 0x20 + k);
-                    self->cursor_x++;
-                    break;
-                }
+            uint8_t tile_index = fontio_builtinfont_get_glyph_index(self->font, c);
+            if (tile_index != 0xff) {
+                common_hal_displayio_tilegrid_set_tile(self->tilegrid, self->cursor_x, self->cursor_y, tile_index);
+                self->cursor_x++;
+
             }
         }
         if (self->cursor_x >= self->tilegrid->width_in_tiles) {
@@ -113,10 +108,10 @@ size_t common_hal_terminalio_terminal_write(terminalio_terminal_obj_t *self, con
         if (self->cursor_y != start_y) {
             // clear the new row
             for (uint16_t j = 0; j < self->tilegrid->width_in_tiles; j++) {
-                common_hal_displayio_textgrid_set_tile(self->tilegrid, j, self->cursor_y, 0);
+                common_hal_displayio_tilegrid_set_tile(self->tilegrid, j, self->cursor_y, 0);
                 start_y = self->cursor_y;
             }
-            common_hal_displayio_textgrid_set_top_left(self->tilegrid, 0, (start_y + self->tilegrid->height_in_tiles + 1) % self->tilegrid->height_in_tiles);
+            common_hal_displayio_tilegrid_set_top_left(self->tilegrid, 0, (start_y + self->tilegrid->height_in_tiles + 1) % self->tilegrid->height_in_tiles);
         }
     }
     return i - data;

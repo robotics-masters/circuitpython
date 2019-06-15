@@ -40,9 +40,17 @@ void common_hal_displayio_tilegrid_construct(displayio_tilegrid_t *self, mp_obj_
     // Sprites will only have one tile so save a little memory by inlining values in the pointer.
     uint8_t inline_tiles = sizeof(uint8_t*);
     if (total_tiles <= inline_tiles) {
+        self->tiles = 0;
+        // Pack values into the pointer since there are only a few.
+        for (uint32_t i = 0; i < inline_tiles; i++) {
+            ((uint8_t*) &self->tiles)[i] = default_tile;
+        }
         self->inline_tiles = true;
     } else {
         self->tiles = (uint8_t*) m_malloc(total_tiles, false);
+        for (uint32_t i = 0; i < total_tiles; i++) {
+            self->tiles[i] = default_tile;
+        }
         self->inline_tiles = false;
     }
     self->bitmap_width_in_tiles = bitmap_width_in_tiles;
@@ -58,15 +66,21 @@ void common_hal_displayio_tilegrid_construct(displayio_tilegrid_t *self, mp_obj_
     self->y = y;
 }
 
-void common_hal_displayio_tilegrid_get_position(displayio_tilegrid_t *self, int16_t* x, int16_t* y) {
-    *x = self->x;
-    *y = self->y;
+
+mp_int_t common_hal_displayio_tilegrid_get_x(displayio_tilegrid_t *self) {
+    return self->x;
+}
+void common_hal_displayio_tilegrid_set_x(displayio_tilegrid_t *self, mp_int_t x) {
+    self->needs_refresh = self->x != x;
+    self->x = x;
+}
+mp_int_t common_hal_displayio_tilegrid_get_y(displayio_tilegrid_t *self) {
+    return self->y;
 }
 
-void common_hal_displayio_tilegrid_set_position(displayio_tilegrid_t *self, int16_t x, int16_t y) {
-    self->x = x;
+void common_hal_displayio_tilegrid_set_y(displayio_tilegrid_t *self, mp_int_t y) {
+    self->needs_refresh = self->y != y;
     self->y = y;
-    self->needs_refresh = true;
 }
 
 mp_obj_t common_hal_displayio_tilegrid_get_pixel_shader(displayio_tilegrid_t *self) {
@@ -78,6 +92,43 @@ void common_hal_displayio_tilegrid_set_pixel_shader(displayio_tilegrid_t *self, 
     self->needs_refresh = true;
 }
 
+
+uint16_t common_hal_displayio_tilegrid_get_width(displayio_tilegrid_t *self) {
+    return self->width_in_tiles;
+}
+
+uint16_t common_hal_displayio_tilegrid_get_height(displayio_tilegrid_t *self) {
+    return self->height_in_tiles;
+}
+
+uint8_t common_hal_displayio_tilegrid_get_tile(displayio_tilegrid_t *self, uint16_t x, uint16_t y) {
+    uint8_t* tiles = self->tiles;
+    if (self->inline_tiles) {
+        tiles = (uint8_t*) &self->tiles;
+    }
+    if (tiles == NULL) {
+        return 0;
+    }
+    return tiles[y * self->width_in_tiles + x];
+}
+
+void common_hal_displayio_tilegrid_set_tile(displayio_tilegrid_t *self, uint16_t x, uint16_t y, uint8_t tile_index) {
+    uint8_t* tiles = self->tiles;
+    if (self->inline_tiles) {
+        tiles = (uint8_t*) &self->tiles;
+    }
+    if (tiles == NULL) {
+        return;
+    }
+    tiles[y * self->width_in_tiles + x] = tile_index;
+    self->needs_refresh = true;
+}
+
+
+void common_hal_displayio_tilegrid_set_top_left(displayio_tilegrid_t *self, uint16_t x, uint16_t y) {
+    self->top_left_x = x;
+    self->top_left_y = y;
+}
 bool displayio_tilegrid_get_pixel(displayio_tilegrid_t *self, int16_t x, int16_t y, uint16_t* pixel) {
     x -= self->x;
     y -= self->y;
@@ -118,31 +169,25 @@ bool displayio_tilegrid_get_pixel(displayio_tilegrid_t *self, int16_t x, int16_t
     return false;
 }
 
-void common_hal_displayio_textgrid_set_tile(displayio_tilegrid_t *self, uint16_t x, uint16_t y, uint8_t tile_index) {
-    uint8_t* tiles = self->tiles;
-    if (self->inline_tiles) {
-        tiles = (uint8_t*) &self->tiles;
-    }
-    if (tiles == NULL) {
-        return;
-    }
-    tiles[y * self->width_in_tiles + x] = tile_index;
-    self->needs_refresh = true;
-}
-
-
-void common_hal_displayio_textgrid_set_top_left(displayio_tilegrid_t *self, uint16_t x, uint16_t y) {
-    self->top_left_x = x;
-    self->top_left_y = y;
-}
-
 bool displayio_tilegrid_needs_refresh(displayio_tilegrid_t *self) {
-    return self->needs_refresh || displayio_palette_needs_refresh(self->pixel_shader);
+    if (self->needs_refresh) {
+        return true;
+    } else if (MP_OBJ_IS_TYPE(self->pixel_shader, &displayio_palette_type)) {
+        return displayio_palette_needs_refresh(self->pixel_shader);
+    } else if (MP_OBJ_IS_TYPE(self->pixel_shader, &displayio_colorconverter_type)) {
+        return displayio_colorconverter_needs_refresh(self->pixel_shader);
+    }
+
+    return false;
 }
 
 void displayio_tilegrid_finish_refresh(displayio_tilegrid_t *self) {
     self->needs_refresh = false;
-    displayio_palette_finish_refresh(self->pixel_shader);
+    if (MP_OBJ_IS_TYPE(self->pixel_shader, &displayio_palette_type)) {
+        displayio_palette_finish_refresh(self->pixel_shader);
+    } else if (MP_OBJ_IS_TYPE(self->pixel_shader, &displayio_colorconverter_type)) {
+        displayio_colorconverter_finish_refresh(self->pixel_shader);
+    }
     // TODO(tannewt): We could double buffer changes to position and move them over here.
     // That way they won't change during a refresh and tear.
 }

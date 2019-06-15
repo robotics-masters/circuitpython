@@ -34,7 +34,7 @@
 #include "shared-bindings/displayio/TileGrid.h"
 #include "supervisor/memory.h"
 
-extern uint32_t blinka_bitmap_data[];
+extern size_t blinka_bitmap_data[];
 extern displayio_bitmap_t blinka_bitmap;
 extern displayio_group_t circuitpython_splash;
 
@@ -81,6 +81,7 @@ void supervisor_start_terminal(uint16_t width_px, uint16_t height_px) {
 void supervisor_stop_terminal(void) {
     if (tilegrid_tiles != NULL) {
         free_memory(tilegrid_tiles);
+        tilegrid_tiles = NULL;
         supervisor_terminal_text_grid.inline_tiles = false;
         supervisor_terminal_text_grid.tiles = NULL;
     }
@@ -106,7 +107,7 @@ void supervisor_display_move_memory(void) {
     #endif
 }
 
-uint32_t blinka_bitmap_data[32] = {
+size_t blinka_bitmap_data[32] = {
     0x00000011, 0x11000000,
     0x00000111, 0x53100000,
     0x00000111, 0x56110000,
@@ -134,7 +135,8 @@ displayio_bitmap_t blinka_bitmap = {
     .bits_per_value = 4,
     .x_shift = 3,
     .x_mask = 0x7,
-    .bitmask = 0xf
+    .bitmask = 0xf,
+    .read_only = true
 };
 
 uint32_t blinka_transparency[1] = {0x80000000};
@@ -171,9 +173,9 @@ displayio_tilegrid_t blinka_sprite = {
     .inline_tiles = true
 };
 
-mp_obj_t splash_children[2] = {
-    &blinka_sprite,
-    &supervisor_terminal_text_grid
+displayio_group_child_t splash_children[2] = {
+    {&blinka_sprite, &blinka_sprite},
+    {&supervisor_terminal_text_grid, &supervisor_terminal_text_grid}
 };
 
 displayio_group_t circuitpython_splash = {
