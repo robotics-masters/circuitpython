@@ -36,6 +36,7 @@ Module             Supported Ports
 `analogio`         **All Supported**
 `audiobusio`       **SAMD/SAMD Express**
 `audioio`          **SAMD Express**
+`audiocore`        **All with audioio**
 `binascii`         **ESP8266**
 `bitbangio`        **SAMD Express, ESP8266**
 `board`            **All Supported**
@@ -53,6 +54,7 @@ Module             Supported Ports
 `nvm`              **SAMD Express**
 `os`               **All Supported**
 `pulseio`          **SAMD/SAMD Express**
+`ps2io`            **SAMD/SAMD Express**
 `random`           **All Supported**
 `rotaryio`         **SAMD51, SAMD Express**
 `storage`          **All Supported**
