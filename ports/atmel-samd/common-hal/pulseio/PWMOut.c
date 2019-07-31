@@ -158,12 +158,14 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
     if (!variable_frequency) {
         for (uint8_t i = 0; i < TCC_INST_NUM && timer == NULL; i++) {
             if (target_tcc_frequencies[i] != frequency) {
+	        mp_printf(&mp_plat_print, "existing: no matching frequency... instance: %d tcc_freq: %d freq: %d\n", i, target_tcc_frequencies[i], frequency);
                 continue;
             }
             for (uint8_t j = 0; j < NUM_TIMERS_PER_PIN && timer == NULL; j++) {
                 const pin_timer_t* t = &pin->timer[j];
                 if (t->index != i || t->is_tc || t->index >= TCC_INST_NUM) {
-                    continue;
+                    mp_printf(&mp_plat_print, "existing: invalid pin... TC/TCC%d[%d] Timer: %d Instance: %d\n", t->index, t->wave_output, j, i);
+		    continue;
                 }
                 Tcc* tcc = tcc_insts[t->index];
                 if (tcc->CTRLA.bit.ENABLE == 1 && channel_ok(t)) {
@@ -171,6 +173,7 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
                     mux_position = j;
                     // Claim channel.
                     tcc_channels[timer->index] |= (1 << tcc_channel(timer));
+		    mp_printf(&mp_plat_print, "use existing... TCC%d[%d] Timer: %d Instance: %d\n", t->index, t->wave_output, j, i);
 
                 }
             }
@@ -201,12 +204,14 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
                 if (tc->COUNT16.CTRLA.bit.ENABLE == 0 && t->wave_output == 1) {
                     timer = t;
                     mux_position = i;
+		    mp_printf(&mp_plat_print, "use new... TC%d[%d] %d\n", t->index, t->wave_output, i);
                 }
             } else {
                 Tcc* tcc = tcc_insts[t->index];
                 if (tcc->CTRLA.bit.ENABLE == 0 && channel_ok(t)) {
                     timer = t;
                     mux_position = i;
+		    mp_printf(&mp_plat_print, "use new... TCC%d[%d] %d\n", t->index, t->wave_output, i);
                 }
             }
         }
