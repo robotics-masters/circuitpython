@@ -203,6 +203,7 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
                     mux_position = i;
                 }
             } else {
+                found = true;
                 Tcc* tcc = tcc_insts[t->index];
                 if (tcc->CTRLA.bit.ENABLE == 0 && channel_ok(t)) {
                     timer = t;
