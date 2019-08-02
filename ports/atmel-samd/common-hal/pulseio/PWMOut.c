@@ -164,10 +164,15 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
             }
             for (uint8_t j = 0; j < NUM_TIMERS_PER_PIN && timer == NULL; j++) {
                 const pin_timer_t* t = &pin->timer[j];
+		mp_printf(&mp_plat_print, "checking... TC/TCC%d[%d] MUX: %d Instance: %d\n", t->index, t->wave_output, j, i);
                 if (t->index != i || t->is_tc || t->index >= TCC_INST_NUM) {
-                    mp_printf(&mp_plat_print, "existing: invalid pin... TC/TCC%d[%d] MUX: %d Instance: %d\n", t->index, t->wave_output, j, i);
+                    mp_printf(&mp_plat_print, "existing invalid pin... TC/TCC%d[%d] MUX: %d Instance: %d\n", t->index, t->wave_output, j, i);
 		    continue;
                 }
+		if ( !channel_ok(t) ) {
+		    mp_printf(&mp_plat_print, "channel not ok!");
+		    continue;
+		}
                 Tcc* tcc = tcc_insts[t->index];
                 if (tcc->CTRLA.bit.ENABLE == 1 && channel_ok(t)) {
                     timer = t;
@@ -196,6 +201,7 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
 	mp_printf(&mp_plat_print, "PRE-FOR... NUM_TIMERS_PER_PIN: %d\n", NUM_TIMERS_PER_PIN);
         for (int8_t i = start; i >= 0 && i < NUM_TIMERS_PER_PIN && timer == NULL; i += direction) {
             const pin_timer_t* t = &pin->timer[i];
+	    mp_printf(&mp_plat_print, "FOR LOOP DESKCHECK... i: %d start: %d direction: %d is_tc: %d %d[%d]\n", i, start, direction, t->is_tc, t->index, t->wave_output);
             if ((!t->is_tc && t->index >= TCC_INST_NUM) ||
                 (t->is_tc && t->index >= TC_INST_NUM)) {
                 continue;
@@ -216,7 +222,7 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
 		    mp_printf(&mp_plat_print, "use new... TCC%d[%d] %d\n", t->index, t->wave_output, i);
                 }
             }
-	    mp_printf(&mp_plat_print, "FOR LOOP DESKCHECK... i: %d start: %d direction: %d is_tc: %d %d[&d]\n", i, start, direction, t->is_tc, t->index, t->wave_output);
+	    
         }
 
         if (timer == NULL) {
