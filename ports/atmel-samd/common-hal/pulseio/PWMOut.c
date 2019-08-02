@@ -156,7 +156,7 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
     const pin_timer_t* timer = NULL;
     uint8_t mux_position = 0;
     if (!variable_frequency) {
-	mp_printf(&mp_plat_print, "PRE-FOR TCC Only... TCC_INST_NUM: %d NUM_TIMERS_PER_PIN: %d\n", TCC_INST_NUM, NUM_TIMERS_PER_PIN);
+	mp_printf(&mp_plat_print, "INFO  Starting 1st for loops\n", TCC_INST_NUM, NUM_TIMERS_PER_PIN);
         for (uint8_t i = 0; i < TCC_INST_NUM && timer == NULL; i++) {
             if (target_tcc_frequencies[i] != frequency) {
 	        mp_printf(&mp_plat_print, "existing: no matching frequency... instance: %d tcc_freq: %d freq: %d\n", i, target_tcc_frequencies[i], frequency);
@@ -198,10 +198,10 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
             direction = 1;
             start = 0;
         }
-	mp_printf(&mp_plat_print, "PRE-FOR... NUM_TIMERS_PER_PIN: %d\n", NUM_TIMERS_PER_PIN);
+	mp_printf(&mp_plat_print, "INFO  Starting 2nd For Loop\n");
         for (int8_t i = start; i >= 0 && i < NUM_TIMERS_PER_PIN && timer == NULL; i += direction) {
             const pin_timer_t* t = &pin->timer[i];
-	    mp_printf(&mp_plat_print, "FOR LOOP DESKCHECK... i: %d start: %d direction: %d is_tc: %d %d[%d]\n", i, start, direction, t->is_tc, t->index, t->wave_output);
+	    mp_printf(&mp_plat_print, "DESKCHECK... i: %d start: %d direction: %d is_tc: %d %d[%d]\n", i, start, direction, t->is_tc, t->index, t->wave_output);
             if ((!t->is_tc && t->index >= TCC_INST_NUM) ||
                 (t->is_tc && t->index >= TC_INST_NUM)) {
                 continue;
@@ -217,6 +217,7 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
             } else {
                 Tcc* tcc = tcc_insts[t->index];
                 if (tcc->CTRLA.bit.ENABLE == 0 && channel_ok(t)) {
+		    found = true;
                     timer = t;
                     mux_position = i;
 		    mp_printf(&mp_plat_print, "use new... TCC%d[%d] %d\n", t->index, t->wave_output, i);
