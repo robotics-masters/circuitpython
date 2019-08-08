@@ -54,9 +54,11 @@ uint8_t tcc_refcount[TCC_INST_NUM];
 // This bitmask keeps track of which channels of a TCC are currently claimed.
 #ifdef SAMD21
 uint8_t tcc_channels[3];   // Set by pwmout_reset() to {0xf0, 0xfc, 0xfc} initially.
+//pulseio_pwmout_obj_t* used_timers[13];  // number of usable channels.  [TCC + tcc_channel(TCC)]
 #endif
 #ifdef SAMD51
 uint8_t tcc_channels[5];   // Set by pwmout_reset() to {0xc0, 0xf0, 0xf8, 0xfc, 0xfc} initially.
+//pulseio_pwmout_obj_t* used_timers[25];  // number of usable channels  [is_tc*4 + TCC + tcc_channel(TCC)]
 #endif
 
 static uint8_t never_reset_tc_or_tcc[TC_INST_NUM + TCC_INST_NUM];
@@ -156,30 +158,30 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
     const pin_timer_t* timer = NULL;
     uint8_t mux_position = 0;
     if (!variable_frequency) {
-	mp_printf(&mp_plat_print, "INFO  Starting 1st for loops\n", TCC_INST_NUM, NUM_TIMERS_PER_PIN);
+        mp_printf(&mp_plat_print, "INFO  Starting 1st for loops TCC_INST_NUM: %d  NUM_TIMERS_PER_PIN: %d TC_INST_NUM: %d\n", TCC_INST_NUM, NUM_TIMERS_PER_PIN, TC_INST_NUM);
         for (uint8_t i = 0; i < TCC_INST_NUM && timer == NULL; i++) {
             if (target_tcc_frequencies[i] != frequency) {
-	        mp_printf(&mp_plat_print, "existing: no matching frequency... instance: %d tcc_freq: %d freq: %d\n", i, target_tcc_frequencies[i], frequency);
+                mp_printf(&mp_plat_print, "existing: no matching frequency... instance: %d tcc_freq: %d freq: %d\n", i, target_tcc_frequencies[i], frequency);
                 continue;
             }
             for (uint8_t j = 0; j < NUM_TIMERS_PER_PIN && timer == NULL; j++) {
                 const pin_timer_t* t = &pin->timer[j];
-		mp_printf(&mp_plat_print, "checking... TC/TCC%d[%d] MUX: %d Instance: %d\n", t->index, t->wave_output, j, i);
+                mp_printf(&mp_plat_print, "checking... TC/TCC%d[%d] MUX: %d Instance: %d\n", t->index, t->wave_output, j, i);
                 if (t->index != i || t->is_tc || t->index >= TCC_INST_NUM) {
                     mp_printf(&mp_plat_print, "existing invalid pin... TC/TCC%d[%d] MUX: %d Instance: %d\n", t->index, t->wave_output, j, i);
-		    continue;
+                    continue;
                 }
-		if ( !channel_ok(t) ) {
-		    mp_printf(&mp_plat_print, "channel not ok!");
-		    continue;
-		}
+                if ( !channel_ok(t) ) {
+                    mp_printf(&mp_plat_print, "channel not ok!");
+                    continue;
+                }
                 Tcc* tcc = tcc_insts[t->index];
                 if (tcc->CTRLA.bit.ENABLE == 1 && channel_ok(t)) {
                     timer = t;
                     mux_position = j;
                     // Claim channel.
                     tcc_channels[timer->index] |= (1 << tcc_channel(timer));
-		    mp_printf(&mp_plat_print, "use existing... TCC%d[%d] MUX: %d Instance: %d\n", t->index, t->wave_output, j, i);
+                    mp_printf(&mp_plat_print, "use existing... TCC%d[%d] MUX: %d Instance: %d\n", t->index, t->wave_output, j, i);
 
                 }
             }
@@ -198,10 +200,10 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
             direction = 1;
             start = 0;
         }
-	mp_printf(&mp_plat_print, "INFO  Starting 2nd For Loop\n");
+        mp_printf(&mp_plat_print, "INFO  Starting 2nd For Loop\n");
         for (int8_t i = start; i >= 0 && i < NUM_TIMERS_PER_PIN && timer == NULL; i += direction) {
             const pin_timer_t* t = &pin->timer[i];
-	    mp_printf(&mp_plat_print, "DESKCHECK... i: %d start: %d direction: %d is_tc: %d %d[%d]\n", i, start, direction, t->is_tc, t->index, t->wave_output);
+            mp_printf(&mp_plat_print, "DESKCHECK... i: %d start: %d direction: %d is_tc: %d %d[%d]\n", i, start, direction, t->is_tc, t->index, t->wave_output);
             if ((!t->is_tc && t->index >= TCC_INST_NUM) ||
                 (t->is_tc && t->index >= TC_INST_NUM)) {
                 continue;
@@ -212,22 +214,23 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
                 if (tc->COUNT16.CTRLA.bit.ENABLE == 0 && t->wave_output == 1) {
                     timer = t;
                     mux_position = i;
-		    mp_printf(&mp_plat_print, "use new... TC%d[%d] %d\n", t->index, t->wave_output, i);
+                    mp_printf(&mp_plat_print, "use new... TC%d[%d] %d\n", t->index, t->wave_output, i);
                 }
             } else {
                 Tcc* tcc = tcc_insts[t->index];
                 if (tcc->CTRLA.bit.ENABLE == 0 && channel_ok(t)) {
-		    found = true;
                     timer = t;
                     mux_position = i;
-		    mp_printf(&mp_plat_print, "use new... TCC%d[%d] %d\n", t->index, t->wave_output, i);
+                    mp_printf(&mp_plat_print, "use new... TCC%d[%d] %d\n", t->index, t->wave_output, i);
                 }
             }
-	    
+
         }
 
+        
         if (timer == NULL) {
             if (found) {
+                //  TODO:  Add in the new stuff above this line
                 return PWMOUT_ALL_TIMERS_ON_PIN_IN_USE;
             }
             return PWMOUT_ALL_TIMERS_IN_USE;
