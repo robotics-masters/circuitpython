@@ -54,11 +54,11 @@ uint8_t tcc_refcount[TCC_INST_NUM];
 // This bitmask keeps track of which channels of a TCC are currently claimed.
 #ifdef SAMD21
 uint8_t tcc_channels[3];   // Set by pwmout_reset() to {0xf0, 0xfc, 0xfc} initially.
-//pulseio_pwmout_obj_t* used_timers[13];  // number of usable channels.  [TCC + tcc_channel(TCC)]
+pulseio_pwmout_obj_t* used_timers[13];  // number of usable channels.  [TCC_INST_NUM * timer->is_tc + timer->index + tcc_channel(timer)]
 #endif
 #ifdef SAMD51
 uint8_t tcc_channels[5];   // Set by pwmout_reset() to {0xc0, 0xf0, 0xf8, 0xfc, 0xfc} initially.
-//pulseio_pwmout_obj_t* used_timers[25];  // number of usable channels  [is_tc*4 + TCC + tcc_channel(TCC)]
+pulseio_pwmout_obj_t* used_timers[25];  // number of usable channels.  [TCC_INST_NUM * timer->is_tc + timer->index + tcc_channel(timer)]
 #endif
 
 static uint8_t never_reset_tc_or_tcc[TC_INST_NUM + TCC_INST_NUM];
@@ -128,6 +128,20 @@ bool channel_ok(const pin_timer_t* t) {
     uint8_t channel_bit = 1 << tcc_channel(t);
     return (!t->is_tc && ((tcc_channels[t->index] & channel_bit) == 0)) ||
             t->is_tc;
+}
+
+bool channel_used(const pin_timer_t* t) {
+    if (t->is_tc && t->wave_output == 1) {
+        uint8_t index = TCC_INST_NUM + t->index;
+    }
+    if (!t->is_tc) {
+        uint8_t index = t->index + tcc_channel(t);  // TCCn + WO%
+    }
+
+    if (used_timers[index] != NULL) {
+        return true;
+    }
+    return false;
 }
 
 pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
@@ -214,7 +228,7 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
                 if (tc->COUNT16.CTRLA.bit.ENABLE == 0 && t->wave_output == 1) {
                     timer = t;
                     mux_position = i;
-                    mp_printf(&mp_plat_print, "use new... TC%d[%d] %d\n", t->index, t->wave_output, i);
+                    mp_printf(&mp_plat_print, "use new... TC%d[%d] i: %d\n", t->index, t->wave_output, i);
                 }
             } else {
                 Tcc* tcc = tcc_insts[t->index];
