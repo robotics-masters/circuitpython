@@ -54,11 +54,11 @@ uint8_t tcc_refcount[TCC_INST_NUM];
 // This bitmask keeps track of which channels of a TCC are currently claimed.
 #ifdef SAMD21
 uint8_t tcc_channels[3];   // Set by pwmout_reset() to {0xf0, 0xfc, 0xfc} initially.
-pulseio_pwmout_obj_t* used_timers[13];  // number of usable channels.  [TCC_INST_NUM * timer->is_tc + timer->index + tcc_channel(timer)]
+pulseio_pwmout_obj_t* used_timers[13]= {NULL};  // number of usable channels.  [TCC_INST_NUM * timer->is_tc + timer->index + tcc_channel(timer)]
 #endif
 #ifdef SAMD51
 uint8_t tcc_channels[5];   // Set by pwmout_reset() to {0xc0, 0xf0, 0xf8, 0xfc, 0xfc} initially.
-pulseio_pwmout_obj_t* used_timers[25];  // number of usable channels.  [TCC_INST_NUM * timer->is_tc + timer->index + tcc_channel(timer)]
+pulseio_pwmout_obj_t* used_timers[25]= {NULL};  // number of usable channels.  [TCC_INST_NUM * timer->is_tc + timer->index + tcc_channel(timer)]
 #endif
 
 static uint8_t never_reset_tc_or_tcc[TC_INST_NUM + TCC_INST_NUM];
@@ -144,6 +144,25 @@ bool channel_used(const pin_timer_t* t) {
     return false;
 }
 
+pulseio_pwmout_obj_t* channel_used_obj(const pin_timer_t* t) {
+    uint8_t index = 0;
+    if (t->is_tc && t->wave_output == 0) {
+        return NULL;
+    }
+    if (t->is_tc && t->wave_output == 1) {
+        uint8_t index = TCC_INST_NUM + t->index;
+    }
+    if (!t->is_tc) {
+        uint8_t index = t->index + tcc_channel(t);  // TCCn + WO%
+    }
+
+    return used_timers[index];
+}
+
+
+
+
+
 pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
                                                     const mcu_pin_obj_t* pin,
                                                     uint16_t duty,
@@ -186,7 +205,7 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
                     continue;
                 }
                 if ( !channel_ok(t) ) {
-                    mp_printf(&mp_plat_print, "channel not ok!");
+                    mp_printf(&mp_plat_print, "channel not ok!\n");
                     continue;
                 }
                 Tcc* tcc = tcc_insts[t->index];
@@ -223,6 +242,7 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
                 continue;
             }
             if (t->is_tc) {
+                // TODO: @wallarug remove found = true or find better use.
                 found = true;
                 Tc* tc = tc_insts[t->index];
                 if (tc->COUNT16.CTRLA.bit.ENABLE == 0 && t->wave_output == 1) {
@@ -241,10 +261,75 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
 
         }
 
-        
+        // no valid timers could be found if timer is NULL.  We can either give up (previous behaviour) or
+        //  try and find a valid timer by swapping timers on a different pin.
         if (timer == NULL) {
             if (found) {
-                //  TODO:  Add in the new stuff above this line
+                // TODO: @wallarug  Add in the new stuff below this line
+                // pre-check what is being used for timers
+                const pin_timer_t* o_timer = NULL;
+                uint8_t o_mux_position = 0;
+                for (int8_t i = start; i >= 0 && i < NUM_TIMERS_PER_PIN && o_timer == NULL; i++) {
+                    const pin_timer_t* t = &pin->timer[i];
+                    pulseio_pwmout_obj_t* occupier = channel_used_obj(t); //  Get which pin is occupying the timer
+                    
+                    if ((!t->is_tc && t->index >= TCC_INST_NUM) ||
+                        (t->is_tc && t->index >= TC_INST_NUM)) {
+                        continue;
+                    }
+                    
+                    // It is highly unlikely that another whole timer is free 
+                    //  with variable frequencies.
+                    // TODO: @wallarug  investigate if better solution
+                    if (occupier->variable_frequency ){
+                        continue;
+                    }
+                    
+                    for (uint8_t j = 0; j < NUM_TIMERS_PER_PIN && o_timer == NULL; j++) {
+                        
+                        const pin_timer_t* ot = occupier->&pin->timer[j];
+                        
+                        // run all the same checks as previously to find a free timer for the occupier
+                        //  so if a free timer exists, we can swap to it.
+                        
+                        if ((!ot->is_tc && ot->index >= TCC_INST_NUM) ||
+                            (ot->is_tc && ot->index >= TC_INST_NUM)) {
+                            continue;
+                        }
+                        
+                        //  Only good cases allowed from here as new timers. 
+                        if (ot->is_tc) {
+                            // TODO: @wallarug remove found = true or find better use.
+                            found = true;
+                            Tc* tc = tc_insts[ot->index];
+                            if (tc->COUNT16.CTRLA.bit.ENABLE == 0 && ot->wave_output == 1) {
+                                timer = ot;
+                                mux_position = j;
+                            }
+                        } else {
+                            Tcc* tcc = tcc_insts[ot->index];
+                            
+                            // this is the same as the frequency check done above. The timer could
+                            //  already be going since we already ruled out variable_frequency.
+                            if (tcc->CTRLA.bit.ENABLE == 1 && channel_ok(ot)) {
+                                o_timer = ot;
+                                o_mux_position = j;
+                                
+                                // TODO: @wallarug ensure old channel decommissioned first! 
+                                uint32_t o_frequency = common_hal_pulseio_pwmout_get_frequency(occupier);
+                                
+                                // Claim channel
+                                tcc_channels[timer->index] |= (1 << tcc_channel(timer));
+                            }
+                            if (tcc->CTRLA.bit.ENABLE == 0 && channel_ok(ot)) {
+                                o_timer = ot;
+                                o_mux_position = j;
+                            }
+                        }
+                    }
+                    
+                    
+                }
                 return PWMOUT_ALL_TIMERS_ON_PIN_IN_USE;
             }
             return PWMOUT_ALL_TIMERS_IN_USE;
@@ -320,6 +405,71 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
 
     common_hal_pulseio_pwmout_set_duty_cycle(self, duty);
     return PWMOUT_OK;
+}
+// TODO: @wallarug  finish off this function and add into mainline function 
+void timer_enabler(pin_timer_t* timer, uint32_t frequency){
+    uint8_t resolution = 0;
+        if (timer->is_tc) {
+            resolution = 16;
+        } else {
+            // TCC resolution varies so look it up.
+            const uint8_t _tcc_sizes[TCC_INST_NUM] = TCC_SIZES;
+            resolution = _tcc_sizes[timer->index];
+        }
+        // First determine the divisor that gets us the highest resolution.
+        uint32_t system_clock = common_hal_mcu_processor_get_frequency();
+        uint32_t top;
+        uint8_t divisor;
+        for (divisor = 0; divisor < 8; divisor++) {
+            top = (system_clock / prescaler[divisor] / frequency) - 1;
+            if (top < (1u << resolution)) {
+                break;
+            }
+        }
+
+        set_timer_handler(timer->is_tc, timer->index, TC_HANDLER_NO_INTERRUPT);
+        // We use the zeroeth clock on either port to go full speed.
+        turn_on_clocks(timer->is_tc, timer->index, 0);
+
+        if (timer->is_tc) {
+            tc_periods[timer->index] = top;
+            Tc* tc = tc_insts[timer->index];
+            #ifdef SAMD21
+            tc->COUNT16.CTRLA.reg = TC_CTRLA_MODE_COUNT16 |
+                                    TC_CTRLA_PRESCALER(divisor) |
+                                    TC_CTRLA_WAVEGEN_MPWM;
+            tc->COUNT16.CC[0].reg = top;
+            #endif
+            #ifdef SAMD51
+
+            tc->COUNT16.CTRLA.bit.SWRST = 1;
+            while (tc->COUNT16.CTRLA.bit.SWRST == 1) {
+            }
+            tc_set_enable(tc, false);
+            tc->COUNT16.CTRLA.reg = TC_CTRLA_MODE_COUNT16 | TC_CTRLA_PRESCALER(divisor);
+            tc->COUNT16.WAVE.reg = TC_WAVE_WAVEGEN_MPWM;
+            tc->COUNT16.CCBUF[0].reg = top;
+            tc->COUNT16.CCBUF[1].reg = 0;
+            #endif
+
+            tc_set_enable(tc, true);
+        } else {
+            tcc_periods[timer->index] = top;
+            Tcc* tcc = tcc_insts[timer->index];
+            tcc_set_enable(tcc, false);
+            tcc->CTRLA.bit.PRESCALER = divisor;
+            tcc->PER.bit.PER = top;
+            tcc->WAVE.bit.WAVEGEN = TCC_WAVE_WAVEGEN_NPWM_Val;
+            tcc_set_enable(tcc, true);
+            target_tcc_frequencies[timer->index] = frequency;
+            tcc_refcount[timer->index]++;
+            if (variable_frequency) {
+                // We're changing frequency so claim all of the channels.
+                tcc_channels[timer->index] = 0xff;
+            } else {
+                tcc_channels[timer->index] |= (1 << tcc_channel(timer));
+            }
+        }
 }
 
 bool common_hal_pulseio_pwmout_deinited(pulseio_pwmout_obj_t* self) {
