@@ -263,13 +263,17 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
         
         if (timer == NULL) {
             if (found) {
-                // TODO: @wallarug  Add in the new stuff below this line
+                // TODO: @wallarug  Added in the new stuff below this line
                 // pre-check what is being used for timers
                 const pin_timer_t* o_timer = NULL;
                 uint8_t o_mux_position = 0;
+                pulseio_pwmout_obj_t* occupier = NULL;
+                
+                // This loop goes through all the timers for the current pin and sees what other pins (o) are
+                //  using the timer.  On SAMD21 there are 2 iterations of this loop, SAMD51 does 3.
                 for (int8_t i = start; i >= 0 && i < NUM_TIMERS_PER_PIN && o_timer == NULL; i++) {
                     const pin_timer_t* t = &pin->timer[i];
-                    pulseio_pwmout_obj_t* occupier = channel_used_obj(t); //  Get which pin is occupying the timer
+                    occupier = channel_used_obj(t); //  Get which pin is occupying the timer
                     
                     if ((!t->is_tc && t->index >= TCC_INST_NUM) ||
                         (t->is_tc && t->index >= TC_INST_NUM)) {
@@ -283,12 +287,12 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
                         continue;
                     }
                     
+                    // This loop goes through all the timers on the other pin (o) and checks if any are free.
+                    //  If there is a free pin, use it and deinit the original timer so that our current pin
+                    //   can use it.
                     for (uint8_t j = 0; j < NUM_TIMERS_PER_PIN && o_timer == NULL; j++) {
                         
                         const pin_timer_t* ot = occupier->&pin->timer[j];
-                        
-                        // run all the same checks as previously to find a free timer for the occupier
-                        //  so if a free timer exists, we can swap to it.
                         
                         if ((!ot->is_tc && ot->index >= TCC_INST_NUM) ||
                             (ot->is_tc && ot->index >= TC_INST_NUM)) {
@@ -326,7 +330,19 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
                         }
                     }  // End Inner For
                 }  // End Outter For
-                return PWMOUT_ALL_TIMERS_ON_PIN_IN_USE;
+                
+                // We need to perform two operations at this stage:
+                //  1.  Deinit the original pin (o) timer  (cheat - just override it)
+                //  2.  Set up the new free timer for use of original pin (o)
+                
+                timer_enabler(o_timer, o_frequency);
+                gpio_set_pin_function(occupier->&pin->number, GPIO_PIN_FUNCTION_E + o_mux_position);
+                
+                timer = occupier->timer;
+                
+                occupier->timer = o_timer;
+                
+                //return PWMOUT_ALL_TIMERS_ON_PIN_IN_USE;
             } // End If Found
             return PWMOUT_ALL_TIMERS_IN_USE;
         } // End If Timer NULL
