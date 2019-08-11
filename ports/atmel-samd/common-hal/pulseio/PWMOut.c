@@ -263,88 +263,75 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
         
         if (timer == NULL) {
             if (found) {
-                return PWMOUT_ALL_TIMERS_ON_PIN_IN_USE;
-            }
-            return PWMOUT_ALL_TIMERS_IN_USE;
-        }
-        
-        timer_enabler(timer, frequency);
-
-        // no valid timers could be found if timer is NULL.  We can either give up (previous behaviour) or
-        //  try and find a valid timer by swapping timers on a different pin.
-        // if (timer == NULL) {
-            // if (found) {
                 // TODO: @wallarug  Add in the new stuff below this line
                 // pre-check what is being used for timers
-                // const pin_timer_t* o_timer = NULL;
-                // uint8_t o_mux_position = 0;
-                // for (int8_t i = start; i >= 0 && i < NUM_TIMERS_PER_PIN && o_timer == NULL; i++) {
-                    // const pin_timer_t* t = &pin->timer[i];
-                    // pulseio_pwmout_obj_t* occupier = channel_used_obj(t); //  Get which pin is occupying the timer
+                const pin_timer_t* o_timer = NULL;
+                uint8_t o_mux_position = 0;
+                for (int8_t i = start; i >= 0 && i < NUM_TIMERS_PER_PIN && o_timer == NULL; i++) {
+                    const pin_timer_t* t = &pin->timer[i];
+                    pulseio_pwmout_obj_t* occupier = channel_used_obj(t); //  Get which pin is occupying the timer
                     
-                    // if ((!t->is_tc && t->index >= TCC_INST_NUM) ||
-                        // (t->is_tc && t->index >= TC_INST_NUM)) {
-                        // continue;
-                    // }
+                    if ((!t->is_tc && t->index >= TCC_INST_NUM) ||
+                        (t->is_tc && t->index >= TC_INST_NUM)) {
+                        continue;
+                    }
                     
-                    // // It is highly unlikely that another whole timer is free 
-                    // //  with variable frequencies.
-                    // // TODO: @wallarug  investigate if better solution
-                    // if (occupier->variable_frequency ){
-                        // continue;
-                    // }
+                    // It is highly unlikely that another whole timer is free 
+                    //  with variable frequencies.
+                    // TODO: @wallarug  investigate if better solution
+                    if (occupier->variable_frequency ){
+                        continue;
+                    }
                     
-                    // for (uint8_t j = 0; j < NUM_TIMERS_PER_PIN && o_timer == NULL; j++) {
+                    for (uint8_t j = 0; j < NUM_TIMERS_PER_PIN && o_timer == NULL; j++) {
                         
-                        // const pin_timer_t* ot = occupier->&pin->timer[j];
+                        const pin_timer_t* ot = occupier->&pin->timer[j];
                         
-                        // // run all the same checks as previously to find a free timer for the occupier
-                        // //  so if a free timer exists, we can swap to it.
+                        // run all the same checks as previously to find a free timer for the occupier
+                        //  so if a free timer exists, we can swap to it.
                         
-                        // if ((!ot->is_tc && ot->index >= TCC_INST_NUM) ||
-                            // (ot->is_tc && ot->index >= TC_INST_NUM)) {
-                            // continue;
-                        // }
+                        if ((!ot->is_tc && ot->index >= TCC_INST_NUM) ||
+                            (ot->is_tc && ot->index >= TC_INST_NUM)) {
+                            continue;
+                        }
                         
-                        // //  Only good cases allowed from here as new timers. 
-                        // if (ot->is_tc) {
-                            // // TODO: @wallarug remove found = true or find better use.
-                            // found = true;
-                            // Tc* tc = tc_insts[ot->index];
-                            // if (tc->COUNT16.CTRLA.bit.ENABLE == 0 && ot->wave_output == 1) {
-                                // timer = ot;
-                                // mux_position = j;
-                            // }
-                        // } else {
-                            // Tcc* tcc = tcc_insts[ot->index];
+                        //  Only good cases allowed from here as new timers. 
+                        if (ot->is_tc) {
+                            // TODO: @wallarug remove found = true or find better use.
+                            found = true;
+                            Tc* tc = tc_insts[ot->index];
+                            if (tc->COUNT16.CTRLA.bit.ENABLE == 0 && ot->wave_output == 1) {
+                                timer = ot;
+                                mux_position = j;
+                            }
+                        } else {
+                            Tcc* tcc = tcc_insts[ot->index];
                             
-                            // // this is the same as the frequency check done above. The timer could
-                            // //  already be going since we already ruled out variable_frequency.
-                            // if (tcc->CTRLA.bit.ENABLE == 1 && channel_ok(ot)) {
-                                // o_timer = ot;
-                                // o_mux_position = j;
+                            // this is the same as the frequency check done above. The timer could
+                            //  already be going since we already ruled out variable_frequency.
+                            if (tcc->CTRLA.bit.ENABLE == 1 && channel_ok(ot)) {
+                                o_timer = ot;
+                                o_mux_position = j;
                                 
-                                // // TODO: @wallarug ensure old channel decommissioned first! 
-                                // uint32_t o_frequency = common_hal_pulseio_pwmout_get_frequency(occupier);
+                                // TODO: @wallarug ensure old channel decommissioned first! 
+                                uint32_t o_frequency = common_hal_pulseio_pwmout_get_frequency(occupier);
                                 
-                                // // Claim channel
-                                // tcc_channels[timer->index] |= (1 << tcc_channel(timer));
-                            // }
-                            // if (tcc->CTRLA.bit.ENABLE == 0 && channel_ok(ot)) {
-                                // o_timer = ot;
-                                // o_mux_position = j;
-                            // }
-                        // }
-                    // }
-                    
-                    
-                // }
-                // return PWMOUT_ALL_TIMERS_ON_PIN_IN_USE;
-            // }
-            // return PWMOUT_ALL_TIMERS_IN_USE;
-        // }
-
+                                // Claim channel
+                                tcc_channels[timer->index] |= (1 << tcc_channel(timer));
+                            }
+                            if (tcc->CTRLA.bit.ENABLE == 0 && channel_ok(ot)) {
+                                o_timer = ot;
+                                o_mux_position = j;
+                            }
+                        }
+                    }  // End Inner For
+                }  // End Outter For
+                return PWMOUT_ALL_TIMERS_ON_PIN_IN_USE;
+            } // End If Found
+            return PWMOUT_ALL_TIMERS_IN_USE;
+        } // End If Timer NULL
         
+        timer_enabler(timer, frequency);
     }
 
     self->timer = timer;
@@ -354,7 +341,8 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
     common_hal_pulseio_pwmout_set_duty_cycle(self, duty);
     return PWMOUT_OK;
 }
-// TODO: @wallarug  finish off this function and add into mainline function 
+
+// Note: @wallarug  Pulled out the stuff to make timers go so it can be used seperately.
 void timer_enabler(pin_timer_t* timer, uint32_t frequency){
     uint8_t resolution = 0;
     if (timer->is_tc) {
