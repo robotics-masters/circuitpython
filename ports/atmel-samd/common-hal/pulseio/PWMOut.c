@@ -335,68 +335,7 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
             return PWMOUT_ALL_TIMERS_IN_USE;
         }
 
-        uint8_t resolution = 0;
-        if (timer->is_tc) {
-            resolution = 16;
-        } else {
-            // TCC resolution varies so look it up.
-            const uint8_t _tcc_sizes[TCC_INST_NUM] = TCC_SIZES;
-            resolution = _tcc_sizes[timer->index];
-        }
-        // First determine the divisor that gets us the highest resolution.
-        uint32_t system_clock = common_hal_mcu_processor_get_frequency();
-        uint32_t top;
-        uint8_t divisor;
-        for (divisor = 0; divisor < 8; divisor++) {
-            top = (system_clock / prescaler[divisor] / frequency) - 1;
-            if (top < (1u << resolution)) {
-                break;
-            }
-        }
-
-        set_timer_handler(timer->is_tc, timer->index, TC_HANDLER_NO_INTERRUPT);
-        // We use the zeroeth clock on either port to go full speed.
-        turn_on_clocks(timer->is_tc, timer->index, 0);
-
-        if (timer->is_tc) {
-            tc_periods[timer->index] = top;
-            Tc* tc = tc_insts[timer->index];
-            #ifdef SAMD21
-            tc->COUNT16.CTRLA.reg = TC_CTRLA_MODE_COUNT16 |
-                                    TC_CTRLA_PRESCALER(divisor) |
-                                    TC_CTRLA_WAVEGEN_MPWM;
-            tc->COUNT16.CC[0].reg = top;
-            #endif
-            #ifdef SAMD51
-
-            tc->COUNT16.CTRLA.bit.SWRST = 1;
-            while (tc->COUNT16.CTRLA.bit.SWRST == 1) {
-            }
-            tc_set_enable(tc, false);
-            tc->COUNT16.CTRLA.reg = TC_CTRLA_MODE_COUNT16 | TC_CTRLA_PRESCALER(divisor);
-            tc->COUNT16.WAVE.reg = TC_WAVE_WAVEGEN_MPWM;
-            tc->COUNT16.CCBUF[0].reg = top;
-            tc->COUNT16.CCBUF[1].reg = 0;
-            #endif
-
-            tc_set_enable(tc, true);
-        } else {
-            tcc_periods[timer->index] = top;
-            Tcc* tcc = tcc_insts[timer->index];
-            tcc_set_enable(tcc, false);
-            tcc->CTRLA.bit.PRESCALER = divisor;
-            tcc->PER.bit.PER = top;
-            tcc->WAVE.bit.WAVEGEN = TCC_WAVE_WAVEGEN_NPWM_Val;
-            tcc_set_enable(tcc, true);
-            target_tcc_frequencies[timer->index] = frequency;
-            tcc_refcount[timer->index]++;
-            if (variable_frequency) {
-                // We're changing frequency so claim all of the channels.
-                tcc_channels[timer->index] = 0xff;
-            } else {
-                tcc_channels[timer->index] |= (1 << tcc_channel(timer));
-            }
-        }
+        timer_enabler(timer, frequency);
     }
 
     self->timer = timer;
@@ -409,67 +348,67 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
 // TODO: @wallarug  finish off this function and add into mainline function 
 void timer_enabler(pin_timer_t* timer, uint32_t frequency){
     uint8_t resolution = 0;
-        if (timer->is_tc) {
-            resolution = 16;
+    if (timer->is_tc) {
+        resolution = 16;
+    } else {
+        // TCC resolution varies so look it up.
+        const uint8_t _tcc_sizes[TCC_INST_NUM] = TCC_SIZES;
+        resolution = _tcc_sizes[timer->index];
+    }
+    // First determine the divisor that gets us the highest resolution.
+    uint32_t system_clock = common_hal_mcu_processor_get_frequency();
+    uint32_t top;
+    uint8_t divisor;
+    for (divisor = 0; divisor < 8; divisor++) {
+        top = (system_clock / prescaler[divisor] / frequency) - 1;
+        if (top < (1u << resolution)) {
+            break;
+        }
+    }
+
+    set_timer_handler(timer->is_tc, timer->index, TC_HANDLER_NO_INTERRUPT);
+    // We use the zeroeth clock on either port to go full speed.
+    turn_on_clocks(timer->is_tc, timer->index, 0);
+
+    if (timer->is_tc) {
+        tc_periods[timer->index] = top;
+        Tc* tc = tc_insts[timer->index];
+        #ifdef SAMD21
+        tc->COUNT16.CTRLA.reg = TC_CTRLA_MODE_COUNT16 |
+                                TC_CTRLA_PRESCALER(divisor) |
+                                TC_CTRLA_WAVEGEN_MPWM;
+        tc->COUNT16.CC[0].reg = top;
+        #endif
+        #ifdef SAMD51
+
+        tc->COUNT16.CTRLA.bit.SWRST = 1;
+        while (tc->COUNT16.CTRLA.bit.SWRST == 1) {
+        }
+        tc_set_enable(tc, false);
+        tc->COUNT16.CTRLA.reg = TC_CTRLA_MODE_COUNT16 | TC_CTRLA_PRESCALER(divisor);
+        tc->COUNT16.WAVE.reg = TC_WAVE_WAVEGEN_MPWM;
+        tc->COUNT16.CCBUF[0].reg = top;
+        tc->COUNT16.CCBUF[1].reg = 0;
+        #endif
+
+        tc_set_enable(tc, true);
+    } else {
+        tcc_periods[timer->index] = top;
+        Tcc* tcc = tcc_insts[timer->index];
+        tcc_set_enable(tcc, false);
+        tcc->CTRLA.bit.PRESCALER = divisor;
+        tcc->PER.bit.PER = top;
+        tcc->WAVE.bit.WAVEGEN = TCC_WAVE_WAVEGEN_NPWM_Val;
+        tcc_set_enable(tcc, true);
+        target_tcc_frequencies[timer->index] = frequency;
+        tcc_refcount[timer->index]++;
+        if (variable_frequency) {
+            // We're changing frequency so claim all of the channels.
+            tcc_channels[timer->index] = 0xff;
         } else {
-            // TCC resolution varies so look it up.
-            const uint8_t _tcc_sizes[TCC_INST_NUM] = TCC_SIZES;
-            resolution = _tcc_sizes[timer->index];
+            tcc_channels[timer->index] |= (1 << tcc_channel(timer));
         }
-        // First determine the divisor that gets us the highest resolution.
-        uint32_t system_clock = common_hal_mcu_processor_get_frequency();
-        uint32_t top;
-        uint8_t divisor;
-        for (divisor = 0; divisor < 8; divisor++) {
-            top = (system_clock / prescaler[divisor] / frequency) - 1;
-            if (top < (1u << resolution)) {
-                break;
-            }
-        }
-
-        set_timer_handler(timer->is_tc, timer->index, TC_HANDLER_NO_INTERRUPT);
-        // We use the zeroeth clock on either port to go full speed.
-        turn_on_clocks(timer->is_tc, timer->index, 0);
-
-        if (timer->is_tc) {
-            tc_periods[timer->index] = top;
-            Tc* tc = tc_insts[timer->index];
-            #ifdef SAMD21
-            tc->COUNT16.CTRLA.reg = TC_CTRLA_MODE_COUNT16 |
-                                    TC_CTRLA_PRESCALER(divisor) |
-                                    TC_CTRLA_WAVEGEN_MPWM;
-            tc->COUNT16.CC[0].reg = top;
-            #endif
-            #ifdef SAMD51
-
-            tc->COUNT16.CTRLA.bit.SWRST = 1;
-            while (tc->COUNT16.CTRLA.bit.SWRST == 1) {
-            }
-            tc_set_enable(tc, false);
-            tc->COUNT16.CTRLA.reg = TC_CTRLA_MODE_COUNT16 | TC_CTRLA_PRESCALER(divisor);
-            tc->COUNT16.WAVE.reg = TC_WAVE_WAVEGEN_MPWM;
-            tc->COUNT16.CCBUF[0].reg = top;
-            tc->COUNT16.CCBUF[1].reg = 0;
-            #endif
-
-            tc_set_enable(tc, true);
-        } else {
-            tcc_periods[timer->index] = top;
-            Tcc* tcc = tcc_insts[timer->index];
-            tcc_set_enable(tcc, false);
-            tcc->CTRLA.bit.PRESCALER = divisor;
-            tcc->PER.bit.PER = top;
-            tcc->WAVE.bit.WAVEGEN = TCC_WAVE_WAVEGEN_NPWM_Val;
-            tcc_set_enable(tcc, true);
-            target_tcc_frequencies[timer->index] = frequency;
-            tcc_refcount[timer->index]++;
-            if (variable_frequency) {
-                // We're changing frequency so claim all of the channels.
-                tcc_channels[timer->index] = 0xff;
-            } else {
-                tcc_channels[timer->index] |= (1 << tcc_channel(timer));
-            }
-        }
+    }
 }
 
 bool common_hal_pulseio_pwmout_deinited(pulseio_pwmout_obj_t* self) {
