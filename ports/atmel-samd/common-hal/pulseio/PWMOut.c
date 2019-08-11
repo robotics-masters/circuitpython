@@ -260,11 +260,20 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
             }
 
         }
+        
+        if (timer == NULL) {
+            if (found) {
+                return PWMOUT_ALL_TIMERS_ON_PIN_IN_USE;
+            }
+            return PWMOUT_ALL_TIMERS_IN_USE;
+        }
+        
+        timer_enabler(timer, frequency);
 
         // no valid timers could be found if timer is NULL.  We can either give up (previous behaviour) or
         //  try and find a valid timer by swapping timers on a different pin.
-        if (timer == NULL) {
-            if (found) {
+        // if (timer == NULL) {
+            // if (found) {
                 // TODO: @wallarug  Add in the new stuff below this line
                 // pre-check what is being used for timers
                 // const pin_timer_t* o_timer = NULL;
@@ -329,13 +338,13 @@ pwmout_result_t common_hal_pulseio_pwmout_construct(pulseio_pwmout_obj_t* self,
                     // }
                     
                     
-                }
-                return PWMOUT_ALL_TIMERS_ON_PIN_IN_USE;
-            }
-            return PWMOUT_ALL_TIMERS_IN_USE;
-        }
+                // }
+                // return PWMOUT_ALL_TIMERS_ON_PIN_IN_USE;
+            // }
+            // return PWMOUT_ALL_TIMERS_IN_USE;
+        // }
 
-        timer_enabler(timer, frequency);
+        
     }
 
     self->timer = timer;
