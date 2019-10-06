@@ -88,25 +88,12 @@ else
   ### CFLAGS += -flto
 endif
 
-# C defines and other board specifics
-ifeq ($(MCU_SUB_VARIANT), stm32f412zx)
-C_DEFS =  \
-	-DUSE_FULL_LL_DRIVER \
-	-DUSE_HAL_DRIVER \
-	-DSTM32F412Zx
-endif
+C_DEFS = -DMCU_PACKAGE=$(MCU_PACKAGE) -DUSE_HAL_DRIVER -DUSE_FULL_LL_DRIVER -D$(CMSIS_MCU)
 
-ifeq ($(MCU_SUB_VARIANT), stm32f411xe)
-C_DEFS =  \
-	-DUSE_HAL_DRIVER \
-	-DSTM32F411xE
-endif
-
-#TODO: Add ASM Flags? -Werror
-CFLAGS += $(INC) -Wall -std=gnu11 -nostdlib $(BASE_CFLAGS) $(C_DEFS) $(CFLAGS_MOD) $(COPT)
+CFLAGS += $(INC) -Werror -Wall -std=gnu11 -nostdlib $(BASE_CFLAGS) $(C_DEFS) $(CFLAGS_MOD) $(COPT)
 
 # Undo some warnings.
-# STM32 apparently also uses undefined preprocessor variables quite casually, 
+# STM32 apparently also uses undefined preprocessor variables quite casually,
 # so we can't do warning checks for these.
 CFLAGS += -Wno-undef
 # STM32 might do casts that increase alignment requirements.
@@ -133,7 +120,7 @@ LIBS += -lm
 endif
 
 # TinyUSB defines
-CFLAGS += -DCFG_TUSB_MCU=OPT_MCU_STM32F4 -DCFG_TUD_CDC_RX_BUFSIZE=1024 -DCFG_TUD_CDC_TX_BUFSIZE=1024 -DCFG_TUD_MSC_BUFSIZE=4096 -DCFG_TUD_MIDI_RX_BUFSIZE=128 -DCFG_TUD_MIDI_TX_BUFSIZE=128
+CFLAGS += -DHSE_VALUE=8000000 -DCFG_TUSB_MCU=OPT_MCU_STM32F4 -DCFG_TUD_CDC_RX_BUFSIZE=1024 -DCFG_TUD_CDC_TX_BUFSIZE=1024 -DCFG_TUD_MSC_BUFSIZE=4096 -DCFG_TUD_MIDI_RX_BUFSIZE=128 -DCFG_TUD_MIDI_TX_BUFSIZE=128
 
 
 ######################################
@@ -141,13 +128,16 @@ CFLAGS += -DCFG_TUSB_MCU=OPT_MCU_STM32F4 -DCFG_TUD_CDC_RX_BUFSIZE=1024 -DCFG_TUD
 ######################################
 
 SRC_STM32 = \
-	boards/$(BOARD)/stm32f4xx_hal_msp.c \
 	stm32f4/STM32F4xx_HAL_Driver/Src/stm32f4xx_ll_gpio.c \
+	stm32f4/STM32F4xx_HAL_Driver/Src/stm32f4xx_ll_adc.c \
+	stm32f4/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_adc.c \
 	stm32f4/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pcd.c \
 	stm32f4/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pcd_ex.c \
 	stm32f4/STM32F4xx_HAL_Driver/Src/stm32f4xx_ll_usb.c \
 	stm32f4/STM32F4xx_HAL_Driver/Src/stm32f4xx_ll_fsmc.c \
 	stm32f4/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_sram.c \
+	stm32f4/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_i2c.c \
+	stm32f4/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_spi.c \
 	stm32f4/STM32F4xx_HAL_Driver/Src/stm32f4xx_ll_i2c.c \
 	stm32f4/STM32F4xx_HAL_Driver/Src/stm32f4xx_ll_dma.c \
 	stm32f4/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_i2s.c \
@@ -175,7 +165,7 @@ SRC_STM32 = \
 	stm32f4/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_cortex.c \
 	stm32f4/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal.c \
 	stm32f4/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_exti.c \
-	system_stm32f4xx.c  
+	system_stm32f4xx.c
 
 SRC_C += \
 	background.c \
@@ -183,8 +173,11 @@ SRC_C += \
 	mphalport.c \
 	tick.c \
 	boards/$(BOARD)/board.c \
+	boards/$(BOARD)/pins.c \
+	peripherals/stm32f4/$(MCU_SUB_VARIANT)/pins.c \
 	peripherals/stm32f4/$(MCU_SUB_VARIANT)/clocks.c \
 	peripherals/stm32f4/$(MCU_SUB_VARIANT)/gpio.c \
+	peripherals/stm32f4/$(MCU_SUB_VARIANT)/periph.c \
 	lib/libc/string0.c \
 	lib/mp-readline/readline.c \
 	lib/oofatfs/ff.c \
@@ -197,14 +190,9 @@ SRC_C += \
 	lib/utils/stdout_helpers.c \
 	lib/utils/sys_stdio_mphal.c \
 	supervisor/shared/memory.c
-	
-ifneq ($(USB),FALSE)
-SRC_C += lib/tinyusb/src/portable/st/stm32f4/dcd_stm32f4.c
-endif
 
-ifeq ($(MCU_SUB_VARIANT), stm32f412zx)
-SRC_C += peripherals/stm32f4/stm32f412zx/pins.c
-SRC_C += boards/$(BOARD)/pins.c
+ifneq ($(USB),FALSE)
+SRC_C += lib/tinyusb/src/portable/st/synopsys/dcd_synopsys.c
 endif
 
 SRC_S = \
@@ -216,12 +204,14 @@ SRC_COMMON_HAL_EXPANDED = $(addprefix shared-bindings/, $(SRC_COMMON_HAL)) \
                           $(addprefix common-hal/, $(SRC_COMMON_HAL))
 
 SRC_SHARED_MODULE_EXPANDED = $(addprefix shared-bindings/, $(SRC_SHARED_MODULE)) \
-                             $(addprefix shared-module/, $(SRC_SHARED_MODULE))
+                             $(addprefix shared-module/, $(SRC_SHARED_MODULE)) \
+                             $(addprefix shared-module/, $(SRC_SHARED_MODULE_INTERNAL))
 
 
-
+ifneq ($(FROZEN_MPY_DIR),)
 FROZEN_MPY_PY_FILES := $(shell find -L $(FROZEN_MPY_DIR) -type f -name '*.py')
 FROZEN_MPY_MPY_FILES := $(addprefix $(BUILD)/,$(FROZEN_MPY_PY_FILES:.py=.mpy))
+endif
 
 OBJ += $(PY_O) $(SUPERVISOR_O) $(addprefix $(BUILD)/, $(SRC_C:.c=.o))
 OBJ += $(addprefix $(BUILD)/, $(SRC_STM32:.c=.o))
