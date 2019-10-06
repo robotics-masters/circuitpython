@@ -30,19 +30,19 @@
 #include "boards/board.h"
 #include "tick.h"
 
+#include "common-hal/microcontroller/Pin.h"
+#include "common-hal/busio/I2C.h"
+#include "common-hal/busio/SPI.h"
+
 #include "stm32f4/clocks.h"
 #include "stm32f4/gpio.h"
 
 #include "stm32f4xx_hal.h"
 
-//#include "shared-bindings/rtc/__init__.h"
-
-static void power_warning_handler(void) {
-    reset_into_safe_mode(BROWNOUT);
-}
-
 safe_mode_t port_init(void) {
 	HAL_Init();
+    __HAL_RCC_SYSCFG_CLK_ENABLE();
+    __HAL_RCC_PWR_CLK_ENABLE();
 
 	stm32f4_peripherals_clocks_init();
 	stm32f4_peripherals_gpio_init();
@@ -54,7 +54,9 @@ safe_mode_t port_init(void) {
 }
 
 void reset_port(void) {
-
+	reset_all_pins();
+    i2c_reset();
+    spi_reset();
 }
 
 void reset_to_bootloader(void) {
@@ -62,7 +64,7 @@ void reset_to_bootloader(void) {
 }
 
 void reset_cpu(void) {
-
+	NVIC_SystemReset();
 }
 
 extern uint32_t _ebss;
@@ -75,6 +77,9 @@ uint32_t port_get_saved_word(void) {
     return _ebss;
 }
 
-// void HardFault_Handler(void) {
-
-// }
+void HardFault_Handler(void) {
+	reset_into_safe_mode(HARD_CRASH);
+    while (true) {
+        asm("nop;");
+    }
+}
