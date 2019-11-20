@@ -54,9 +54,19 @@ void SysTick_Handler(void) {
 #endif
 }
 
+uint32_t HAL_GetTick(void) //override ST HAL
+{
+  return (uint32_t)ticks_ms;
+}
+
 void tick_init() {
     uint32_t ticks_per_ms = SystemCoreClock/ 1000;
     SysTick_Config(ticks_per_ms); // interrupt is enabled
+
+    NVIC_EnableIRQ(SysTick_IRQn);
+    // Bump up the systick interrupt so nothing else interferes with timekeeping.
+    NVIC_SetPriority(SysTick_IRQn, 0);
+    NVIC_SetPriority(OTG_FS_IRQn, 1);
 }
 
 void tick_delay(uint32_t us) {

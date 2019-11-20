@@ -125,6 +125,7 @@ exclude_patterns = ["**/build*",
                     "ports/cc3200",
                     "ports/cc3200/FreeRTOS",
                     "ports/cc3200/hal",
+                    "ports/cxd56/spresense-exported-sdk",
                     "ports/esp32",
                     "ports/esp8266/boards",
                     "ports/esp8266/common-hal",
@@ -139,7 +140,6 @@ exclude_patterns = ["**/build*",
                     "ports/stm32f4/stm32f4",
                     "ports/stm32f4/peripherals",
                     "ports/stm32f4/ref",
-                    "ports/stm32f4/README.md",
                     "ports/pic16bit",
                     "ports/qemu-arm",
                     "ports/stm32",
@@ -369,3 +369,6 @@ texinfo_documents = [
 intersphinx_mapping = {"cpython": ('https://docs.python.org/3/', None),
                        "bus_device": ('https://circuitpython.readthedocs.io/projects/busdevice/en/latest/', None),
                        "register": ('https://circuitpython.readthedocs.io/projects/register/en/latest/', None)}
+
+def setup(app):
+    app.add_stylesheet("customstyle.css")
